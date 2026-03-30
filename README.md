@@ -9,15 +9,17 @@ Python wrapper for Google's nsjail sandboxing tool
 ## Installation
 
 ```bash
+# Default: includes pre-built nsjail binary (Linux x86_64/aarch64)
 pip install nsjail-python
-```
 
-Optional extras:
+# Use system-provided nsjail (no bundled binary)
+pip install nsjail-python[system]
 
-```bash
-pip install nsjail-python[proto]   # Enable protobuf validation
-pip install nsjail-python[system]  # Use system-provided nsjail
-pip install nsjail-python[build]   # Build nsjail from source
+# Build nsjail from source during install (needs gcc, make, protoc, etc.)
+pip install nsjail-python[build]
+
+# Add protobuf validation support
+pip install nsjail-python[proto]
 ```
 
 ## Quick Start
