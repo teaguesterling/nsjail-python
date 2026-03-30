@@ -111,14 +111,17 @@ class Runner:
         self._capture_output = capture_output
         self._keep_config = keep_config
 
-    def run(
+    def _prepare_run(
         self,
-        overrides: NsJailConfig | None = None,
-        *,
-        override_fields: set[str] | None = None,
-        extra_args: list[str] | None = None,
-        timeout: float | None = None,
-    ) -> NsJailResult:
+        overrides: NsJailConfig | None,
+        override_fields: set[str] | None,
+        extra_args: list[str] | None,
+    ) -> tuple[list[str], Path | None, NsJailConfig]:
+        """Resolve binary, merge configs, and render to args.
+
+        Returns (nsjail_args, config_path, merged_cfg).
+        config_path is None when render_mode is 'cli'.
+        """
         nsjail_bin = resolve_nsjail_path(self._nsjail_path)
 
         if overrides is not None and override_fields:
@@ -153,6 +156,43 @@ class Runner:
             nsjail_args.append(cfg.exec_bin.path)
             nsjail_args.extend(cfg.exec_bin.arg)
 
+        return nsjail_args, config_path, cfg
+
+    def _make_result(
+        self,
+        returncode: int,
+        stdout: bytes,
+        stderr: bytes,
+        config_path: Path | None,
+        nsjail_args: list[str],
+    ) -> NsJailResult:
+        """Build an NsJailResult from raw subprocess output."""
+        timed_out = returncode == 109
+        signaled = returncode > 100 and not timed_out
+        oom_killed = returncode == 137
+
+        return NsJailResult(
+            returncode=returncode,
+            stdout=stdout,
+            stderr=stderr,
+            config_path=config_path,
+            nsjail_args=nsjail_args,
+            timed_out=timed_out,
+            oom_killed=oom_killed,
+            signaled=signaled,
+            inner_returncode=returncode if returncode < 100 else None,
+        )
+
+    def run(
+        self,
+        overrides: NsJailConfig | None = None,
+        *,
+        override_fields: set[str] | None = None,
+        extra_args: list[str] | None = None,
+        timeout: float | None = None,
+    ) -> NsJailResult:
+        nsjail_args, config_path, _cfg = self._prepare_run(overrides, override_fields, extra_args)
+
         try:
             result = subprocess.run(
                 nsjail_args,
@@ -164,20 +204,12 @@ class Runner:
                 config_path.unlink(missing_ok=True)
                 config_path = None
 
-        timed_out = result.returncode == 109
-        signaled = result.returncode > 100 and not timed_out
-        oom_killed = result.returncode == 137
-
-        return NsJailResult(
+        return self._make_result(
             returncode=result.returncode,
             stdout=result.stdout if self._capture_output else b"",
             stderr=result.stderr if self._capture_output else b"",
             config_path=config_path,
             nsjail_args=nsjail_args,
-            timed_out=timed_out,
-            oom_killed=oom_killed,
-            signaled=signaled,
-            inner_returncode=result.returncode if result.returncode < 100 else None,
         )
 
     def fork(

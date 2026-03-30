@@ -115,3 +115,40 @@ class TestRunner:
         # Independent copy
         forked._base_config.hostname = "changed"
         assert runner._base_config.hostname == "base"
+
+
+class TestPrepareRun:
+    def test_prepare_run_returns_args_and_path(self):
+        base = NsJailConfig(hostname="test", time_limit=30, exec_bin=Exe(path="/bin/sh"))
+        runner = Runner(base_config=base, nsjail_path="/usr/bin/nsjail")
+        nsjail_args, config_path, cfg = runner._prepare_run(None, None, None)
+        assert nsjail_args[0] == "/usr/bin/nsjail"
+        assert "--config" in nsjail_args
+        assert config_path is not None
+        assert config_path.exists()
+        config_path.unlink()
+
+    def test_prepare_run_with_overrides(self):
+        base = NsJailConfig(time_limit=60, exec_bin=Exe(path="/bin/sh"))
+        runner = Runner(base_config=base, nsjail_path="/usr/bin/nsjail")
+        nsjail_args, config_path, cfg = runner._prepare_run(
+            NsJailConfig(time_limit=120), {"time_limit"}, None
+        )
+        assert cfg.time_limit == 120
+        if config_path:
+            config_path.unlink()
+
+    def test_prepare_run_with_extra_args(self):
+        base = NsJailConfig(exec_bin=Exe(path="python", arg=["main.py"]))
+        runner = Runner(base_config=base, nsjail_path="/usr/bin/nsjail")
+        _, config_path, cfg = runner._prepare_run(None, None, ["--verbose"])
+        assert cfg.exec_bin.arg == ["main.py", "--verbose"]
+        if config_path:
+            config_path.unlink()
+
+    def test_prepare_run_cli_mode(self):
+        base = NsJailConfig(hostname="test", exec_bin=Exe(path="/bin/sh"))
+        runner = Runner(base_config=base, nsjail_path="/usr/bin/nsjail", render_mode="cli")
+        nsjail_args, config_path, cfg = runner._prepare_run(None, None, None)
+        assert config_path is None
+        assert "--hostname" in nsjail_args
