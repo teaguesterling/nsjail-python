@@ -1,0 +1,108 @@
+name: Build nsjail binaries
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+
+jobs:
+  build-binary:
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            docker_platform: linux/amd64
+          - arch: aarch64
+            docker_platform: linux/arm64
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up QEMU
+        if: matrix.arch == 'aarch64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build nsjail in manylinux container
+        env:
+          DOCKER_PLATFORM: ${{ matrix.docker_platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            -v "$GITHUB_WORKSPACE":/work \
+            -w /work \
+            "quay.io/pypa/manylinux_2_28_${ARCH}" \
+            bash -c '
+              set -ex
+
+              # Install build dependencies
+              yum install -y \
+                protobuf-compiler protobuf-devel \
+                libnl3-devel libcap-devel \
+                bison flex autoconf libtool git make gcc-c++ \
+                pkg-config
+
+              # Build nsjail
+              cd _vendor/nsjail
+              make -j$(nproc)
+              strip nsjail
+
+              # Verify binary
+              file nsjail
+
+              # Copy into package
+              cp nsjail /work/packages/nsjail-bin/src/nsjail_bin/_bin/nsjail
+              chmod +x /work/packages/nsjail-bin/src/nsjail_bin/_bin/nsjail
+            '
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel
+        run: |
+          pip install build hatchling
+          cd packages/nsjail-bin
+          python -m build --wheel
+
+      - name: Verify wheel contents
+        run: |
+          pip install packages/nsjail-bin/dist/*.whl
+          python -c "
+          from nsjail_bin import binary_path
+          p = binary_path()
+          print(f'Binary at: {p}')
+          print(f'Size: {p.stat().st_size} bytes')
+          "
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsjail-bin-${{ matrix.arch }}
+          path: packages/nsjail-bin/dist/*.whl
+
+  publish-binary:
+    needs: build-binary
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: List wheels
+        run: ls -la dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
