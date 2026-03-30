@@ -25,10 +25,10 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/teaguesterling/nsjail-python-"
+Homepage = "https://github.com/teaguesterling/nsjail-python"
 Documentation = "https://nsjail-python.readthedocs.io"
-Repository = "https://github.com/teaguesterling/nsjail-python-"
-Issues = "https://github.com/teaguesterling/nsjail-python-/issues"
+Repository = "https://github.com/teaguesterling/nsjail-python"
+Issues = "https://github.com/teaguesterling/nsjail-python/issues"
 
 [project.optional-dependencies]
 proto = ["protobuf>=4.0"]
