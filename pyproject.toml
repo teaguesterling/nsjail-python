@@ -8,7 +8,27 @@ version = "0.1.0"
 description = "Python wrapper for Google's nsjail sandboxing tool"
 requires-python = ">=3.12"
 license = "MIT"
+readme = "README.md"
+keywords = ["nsjail", "sandbox", "isolation", "container", "security"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: System :: Operating System Kernels :: Linux",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/teaguesterling/nsjail-python-"
+Documentation = "https://nsjail-python.readthedocs.io"
+Repository = "https://github.com/teaguesterling/nsjail-python-"
+Issues = "https://github.com/teaguesterling/nsjail-python-/issues"
 
 [project.optional-dependencies]
 proto = ["protobuf>=4.0"]
@@ -16,6 +36,8 @@ dev = [
     "grpcio-tools",
     "pytest",
     "protobuf>=4.0",
+    "sphinx",
+    "furo",
 ]
 
 [tool.hatch.build.targets.wheel]
