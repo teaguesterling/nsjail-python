@@ -5,7 +5,6 @@ from enum import IntEnum
 
 
 class Mode(IntEnum):
-    """nsjail execution mode."""
     LISTEN = 0
     ONCE = 1
     RERUN = 2
@@ -13,7 +12,6 @@ class Mode(IntEnum):
 
 
 class LogLevel(IntEnum):
-    """Log verbosity level."""
     DEBUG = 0
     INFO = 1
     WARNING = 2
@@ -22,8 +20,8 @@ class LogLevel(IntEnum):
 
 
 class RLimitType(IntEnum):
-    """How to interpret an rlimit value."""
     VALUE = 0
     SOFT = 1
     HARD = 2
     INF = 3
+

@@ -1,8 +1,14 @@
 from _codegen.generate import (
     parse_proto,
+    emit_enums,
+    emit_config,
+    emit_field_meta,
     ProtoEnum,
     ProtoMessage,
 )
+from _codegen.cli_flags import CLI_FLAGS
+from pathlib import Path
+import pytest
 
 
 SAMPLE_PROTO = """
@@ -69,9 +75,6 @@ class TestParseProto:
         assert envar.label == "repeated"
 
 
-from _codegen.generate import emit_enums
-
-
 class TestEmitEnums:
     def test_emit_top_level_enums(self):
         items = parse_proto(SAMPLE_PROTO)
@@ -83,3 +86,72 @@ class TestEmitEnums:
         assert "class LogLevel(IntEnum):" in output
         assert "class RLimitType(IntEnum):" in output
         assert "VALUE = 0" in output
+
+
+class TestEmitConfig:
+    def test_emit_produces_valid_python(self):
+        items = parse_proto(SAMPLE_PROTO)
+        enums = [i for i in items if isinstance(i, ProtoEnum)]
+        messages = [i for i in items if isinstance(i, ProtoMessage)]
+        output = emit_config(messages, enums)
+        compile(output, "<test>", "exec")
+
+    def test_emit_has_dataclass(self):
+        items = parse_proto(SAMPLE_PROTO)
+        enums = [i for i in items if isinstance(i, ProtoEnum)]
+        messages = [i for i in items if isinstance(i, ProtoMessage)]
+        output = emit_config(messages, enums)
+        assert "@dataclass" in output
+        assert "class NsJailConfig:" in output
+
+    def test_emit_has_correct_defaults(self):
+        items = parse_proto(SAMPLE_PROTO)
+        enums = [i for i in items if isinstance(i, ProtoEnum)]
+        messages = [i for i in items if isinstance(i, ProtoMessage)]
+        output = emit_config(messages, enums)
+        assert 'hostname: str = "NSJAIL"' in output
+        assert "time_limit: int = 600" in output
+        assert "clone_newnet: bool = True" in output
+
+    def test_emit_repeated_field(self):
+        items = parse_proto(SAMPLE_PROTO)
+        enums = [i for i in items if isinstance(i, ProtoEnum)]
+        messages = [i for i in items if isinstance(i, ProtoMessage)]
+        output = emit_config(messages, enums)
+        assert "envar: list[str] = field(default_factory=list)" in output
+
+
+class TestEmitFieldMeta:
+    def test_emit_produces_valid_python(self):
+        items = parse_proto(SAMPLE_PROTO)
+        enums = [i for i in items if isinstance(i, ProtoEnum)]
+        messages = [i for i in items if isinstance(i, ProtoMessage)]
+        emit_config(messages, enums)
+        output = emit_field_meta(messages, CLI_FLAGS, top_enums=enums)
+        compile(output, "<test>", "exec")
+
+    def test_emit_has_hostname_entry(self):
+        items = parse_proto(SAMPLE_PROTO)
+        enums = [i for i in items if isinstance(i, ProtoEnum)]
+        messages = [i for i in items if isinstance(i, ProtoMessage)]
+        emit_config(messages, enums)
+        output = emit_field_meta(messages, CLI_FLAGS, top_enums=enums)
+        assert '"NsJailConfig", "hostname"' in output
+        assert '"NSJAIL"' in output
+
+
+class TestFullGeneration:
+    def test_generate_against_vendored_proto(self):
+        proto_path = Path("_vendor/nsjail/config.proto")
+        if not proto_path.exists():
+            pytest.skip("Vendored config.proto not available")
+        text = proto_path.read_text()
+        items = parse_proto(text)
+        top_enums = [i for i in items if isinstance(i, ProtoEnum)]
+        messages = [i for i in items if isinstance(i, ProtoMessage)]
+        enums_out = emit_enums(top_enums, messages)
+        compile(enums_out, "enums.py", "exec")
+        config_out = emit_config(messages, top_enums)
+        compile(config_out, "config.py", "exec")
+        meta_out = emit_field_meta(messages, CLI_FLAGS, top_enums=top_enums)
+        compile(meta_out, "_field_meta.py", "exec")

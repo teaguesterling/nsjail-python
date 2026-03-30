@@ -1,6 +1,6 @@
 from dataclasses import fields
 
-from nsjail.config import NsJailConfig, MountPt, IdMap, Exe, TrafficRule, UserNet
+from nsjail.config import NsJailConfig, MountPt, IdMap, Exe, UserNet
 from nsjail.enums import Mode, LogLevel, RLimitType
 
 
