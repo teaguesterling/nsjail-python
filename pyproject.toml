@@ -22,7 +22,7 @@ classifiers = [
     "Topic :: Security",
     "Topic :: System :: Operating System Kernels :: Linux",
 ]
-dependencies = []
+dependencies = ["nsjail-bin"]
 
 [project.urls]
 Homepage = "https://github.com/teaguesterling/nsjail-python"
@@ -32,6 +32,8 @@ Issues = "https://github.com/teaguesterling/nsjail-python/issues"
 
 [project.optional-dependencies]
 proto = ["protobuf>=4.0"]
+build = ["nsjail-bin-build"]
+system = ["nsjail-bin-none"]
 dev = [
     "grpcio-tools",
     "pytest",
