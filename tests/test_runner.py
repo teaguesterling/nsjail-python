@@ -1,3 +1,4 @@
+import asyncio
 import copy
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -152,3 +153,45 @@ class TestPrepareRun:
         nsjail_args, config_path, cfg = runner._prepare_run(None, None, None)
         assert config_path is None
         assert "--hostname" in nsjail_args
+
+
+class TestAsyncRun:
+    def test_async_run_returns_result(self):
+        base = NsJailConfig(exec_bin=Exe(path="/bin/echo", arg=["hello"]))
+        runner = Runner(base_config=base, nsjail_path="/bin/echo")
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+
+        async def mock_communicate():
+            return (b"hello\n", b"")
+        mock_proc.communicate = mock_communicate
+
+        async def mock_create(*args, **kwargs):
+            return mock_proc
+
+        with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+            result = asyncio.run(runner.async_run())
+
+        assert isinstance(result, NsJailResult)
+        assert result.returncode == 0
+        assert result.stdout == b"hello\n"
+
+    def test_async_run_with_extra_args(self):
+        base = NsJailConfig(exec_bin=Exe(path="python", arg=["main.py"]))
+        runner = Runner(base_config=base, nsjail_path="/usr/bin/nsjail")
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+
+        async def mock_communicate():
+            return (b"", b"")
+        mock_proc.communicate = mock_communicate
+
+        async def mock_create(*args, **kwargs):
+            return mock_proc
+
+        with patch("asyncio.create_subprocess_exec", side_effect=mock_create):
+            result = asyncio.run(runner.async_run(extra_args=["--verbose"]))
+
+        assert result.returncode == 0

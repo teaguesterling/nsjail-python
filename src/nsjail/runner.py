@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import shutil
 import subprocess
@@ -210,6 +211,44 @@ class Runner:
             stderr=result.stderr if self._capture_output else b"",
             config_path=config_path,
             nsjail_args=nsjail_args,
+        )
+
+    async def async_run(
+        self,
+        overrides: NsJailConfig | None = None,
+        *,
+        override_fields: set[str] | None = None,
+        extra_args: list[str] | None = None,
+        timeout: float | None = None,
+    ) -> NsJailResult:
+        """Run nsjail asynchronously."""
+        nsjail_args, config_path, cfg = self._prepare_run(
+            overrides, override_fields, extra_args
+        )
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *nsjail_args,
+                stdout=asyncio.subprocess.PIPE if self._capture_output else None,
+                stderr=asyncio.subprocess.PIPE if self._capture_output else None,
+            )
+            if timeout is not None:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout
+                )
+            else:
+                stdout, stderr = await proc.communicate()
+        finally:
+            if config_path and not self._keep_config:
+                config_path.unlink(missing_ok=True)
+                config_path = None
+
+        return self._make_result(
+            proc.returncode,
+            stdout if self._capture_output else b"",
+            stderr if self._capture_output else b"",
+            config_path,
+            nsjail_args,
         )
 
     def fork(
