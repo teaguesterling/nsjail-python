@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from nsjail.serializers.textproto import to_textproto
+from nsjail.serializers.cli import to_cli_args
 
 
 def to_file(cfg: Any, path: str | Path, *, validate: bool = False) -> None:
@@ -22,4 +23,4 @@ def to_file(cfg: Any, path: str | Path, *, validate: bool = False) -> None:
     Path(path).write_text(text + "\n")
 
 
-__all__ = ["to_textproto", "to_file"]
+__all__ = ["to_textproto", "to_cli_args", "to_file"]
