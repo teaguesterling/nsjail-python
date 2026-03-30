@@ -5,4 +5,5 @@ dist/
 build/
 .venv/
 *.so
-_vendor/
+_vendor/*/
+!_vendor/nsjail
