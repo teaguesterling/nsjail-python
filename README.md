@@ -9,11 +9,11 @@ Python wrapper for Google's nsjail sandboxing tool
 ## Installation
 
 ```bash
-# Default: includes pre-built nsjail binary (Linux x86_64/aarch64)
+# Core library only (expects nsjail on PATH or installed separately)
 pip install nsjail-python
 
-# Use system-provided nsjail (no bundled binary)
-pip install nsjail-python[system]
+# Include pre-built nsjail binary (Linux x86_64/aarch64)
+pip install nsjail-python[binary]
 
 # Build nsjail from source during install (needs gcc, make, protoc, etc.)
 pip install nsjail-python[build]
