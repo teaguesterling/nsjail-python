@@ -34,6 +34,10 @@ class NsjailBuildFromSourceHook(BuildHookInterface):
     PLUGIN_NAME = "nsjail-bin-build"
 
     def initialize(self, version, build_data):
+        # Only compile during wheel builds, not sdist
+        if self.target_name == "sdist":
+            return
+
         build_data["pure_python"] = False
         build_data["infer_tag"] = True
 
