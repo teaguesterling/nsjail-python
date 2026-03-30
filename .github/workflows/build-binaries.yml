@@ -52,9 +52,9 @@ jobs:
                 pkg-config
 
               # Build nsjail
-              # MS_NOSYMFOLLOW not defined in glibc < 2.35 (AlmaLinux 8)
+              # Older glibc in AlmaLinux 8 lacks some newer kernel constants
               cd _vendor/nsjail
-              make -j$(nproc) USER_DEFINES="-DMS_NOSYMFOLLOW=256"
+              make -j$(nproc) USER_DEFINES="-DMS_NOSYMFOLLOW=256 -DF_SEAL_FUTURE_WRITE=16"
               strip nsjail
 
               # Verify binary
