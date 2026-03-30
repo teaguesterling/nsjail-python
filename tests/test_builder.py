@@ -1,6 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 from nsjail.builder import Jail
 from nsjail.config import NsJailConfig
 from nsjail.enums import Mode
+from nsjail.runner import NsJailResult, Runner
 
 
 class TestBuilderCommand:
@@ -137,3 +140,38 @@ class TestBuilderChaining:
     def test_build_returns_nsjailconfig(self):
         cfg = Jail().sh("true").build()
         assert isinstance(cfg, NsJailConfig)
+
+
+class TestBuilderRun:
+    def test_run_with_default_runner(self):
+        mock_result = NsJailResult(
+            returncode=0, stdout=b"ok", stderr=b"",
+            config_path=None, nsjail_args=[], timed_out=False,
+            oom_killed=False, signaled=False, inner_returncode=0,
+        )
+        with patch.object(Runner, "run", return_value=mock_result):
+            result = Jail().sh("echo hi").timeout(10).run()
+        assert result.returncode == 0
+
+    def test_run_with_explicit_runner(self):
+        runner = Runner(nsjail_path="/custom/nsjail", render_mode="cli")
+        mock_result = NsJailResult(
+            returncode=0, stdout=b"", stderr=b"",
+            config_path=None, nsjail_args=[], timed_out=False,
+            oom_killed=False, signaled=False, inner_returncode=0,
+        )
+        with patch.object(Runner, "run", return_value=mock_result):
+            result = Jail().sh("true").run(runner=runner)
+        assert result.returncode == 0
+
+    def test_run_passes_kwargs(self):
+        mock_result = NsJailResult(
+            returncode=0, stdout=b"", stderr=b"",
+            config_path=None, nsjail_args=[], timed_out=False,
+            oom_killed=False, signaled=False, inner_returncode=0,
+        )
+        with patch.object(Runner, "run", return_value=mock_result) as mock_run:
+            Jail().sh("true").run(extra_args=["--verbose"])
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("extra_args") == ["--verbose"]

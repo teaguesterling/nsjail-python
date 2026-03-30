@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nsjail.runner import Runner, NsJailResult
 
 from nsjail.config import Exe, IdMap, MountPt, NsJailConfig
 from nsjail.presets import (
@@ -116,3 +119,33 @@ class Jail:
             IdMap(inside_id=str(inside), outside_id=str(outside), count=count)
         )
         return self
+
+    # --- Execution ---
+
+    def run(self, *, runner: Runner | None = None, **run_kwargs: object) -> NsJailResult:
+        """Execute the built config via a Runner."""
+        from nsjail.runner import Runner as _Runner
+
+        r = runner or _Runner()
+        temp = _Runner(
+            base_config=self._cfg,
+            nsjail_path=r._nsjail_path,
+            render_mode=r._render_mode,
+            capture_output=r._capture_output,
+            keep_config=r._keep_config,
+        )
+        return temp.run(**run_kwargs)
+
+    async def async_run(self, *, runner: Runner | None = None, **run_kwargs: object) -> NsJailResult:
+        """Execute the built config asynchronously via a Runner."""
+        from nsjail.runner import Runner as _Runner
+
+        r = runner or _Runner()
+        temp = _Runner(
+            base_config=self._cfg,
+            nsjail_path=r._nsjail_path,
+            render_mode=r._render_mode,
+            capture_output=r._capture_output,
+            keep_config=r._keep_config,
+        )
+        return await temp.async_run(**run_kwargs)
