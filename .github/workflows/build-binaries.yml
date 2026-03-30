@@ -54,7 +54,7 @@ jobs:
               # Build nsjail
               # Older glibc in AlmaLinux 8 lacks some newer kernel constants
               cd _vendor/nsjail
-              make -j$(nproc) USER_DEFINES="-DMS_NOSYMFOLLOW=256 -DF_SEAL_FUTURE_WRITE=16"
+              make -j$(nproc) USER_DEFINES="-DMS_NOSYMFOLLOW=256 -DF_SEAL_FUTURE_WRITE=16 -Wno-error=array-bounds"
               strip nsjail
 
               # Verify binary
