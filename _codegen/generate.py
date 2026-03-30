@@ -131,6 +131,35 @@ def _strip_nested_blocks(text: str) -> str:
     return ''.join(result)
 
 
+# Enums that are nested inside messages but should be top-level in enums.py
+PROMOTED_ENUMS: dict[tuple[str, str], str] = {
+    ("NsJailConfig", "RLimit"): "RLimitType",
+}
+
+
+def emit_enums(top_level_enums: list[ProtoEnum], messages: list[ProtoMessage]) -> str:
+    """Generate enums.py content."""
+    lines = [HEADER, "from enum import IntEnum\n"]
+
+    for enum in top_level_enums:
+        lines.append(f"\nclass {enum.name}(IntEnum):")
+        for name, value in enum.values:
+            lines.append(f"    {name} = {value}")
+        lines.append("")
+
+    for msg in messages:
+        for nested_enum in msg.enums:
+            key = (msg.name, nested_enum.name)
+            python_name = PROMOTED_ENUMS.get(key)
+            if python_name:
+                lines.append(f"\nclass {python_name}(IntEnum):")
+                for name, value in nested_enum.values:
+                    lines.append(f"    {name} = {value}")
+                lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
 def main() -> None:
     proto_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("_codegen/config.proto")
     if not proto_path.exists():
