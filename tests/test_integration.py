@@ -4,7 +4,12 @@ These tests verify the full workflow from builder to serialized config.
 They do NOT require nsjail to be installed.
 """
 
+import asyncio
+import pytest
+from unittest.mock import MagicMock, patch
+
 from nsjail import Jail, NsJailConfig, MountPt, Exe, sandbox, Runner
+from nsjail.runner import NsJailResult
 from nsjail.serializers import to_textproto, to_cli_args, to_file
 
 
@@ -76,3 +81,38 @@ class TestTextprotoToFile:
         content = path.read_text()
         assert "time_limit: 10" in content
         assert "exec_bin {" in content
+
+
+class TestBuilderRunIntegration:
+    def test_builder_run_with_mock(self):
+        mock_result = NsJailResult(
+            returncode=0, stdout=b"hello", stderr=b"",
+            config_path=None, nsjail_args=[], timed_out=False,
+            oom_killed=False, signaled=False, inner_returncode=0,
+        )
+        with patch.object(Runner, "run", return_value=mock_result):
+            result = (
+                Jail()
+                .sh("echo hello")
+                .timeout(10)
+                .memory(256, "MB")
+                .run()
+            )
+        assert result.returncode == 0
+        assert result.stdout == b"hello"
+
+
+class TestProtobufIntegration:
+    def test_protobuf_round_trip(self):
+        pytest.importorskip("google.protobuf")
+        from nsjail.serializers.protobuf import to_protobuf
+
+        cfg = (
+            Jail()
+            .sh("echo hello")
+            .timeout(30)
+            .memory(256, "MB")
+            .build()
+        )
+        msg = to_protobuf(cfg)
+        assert msg.time_limit == 30
