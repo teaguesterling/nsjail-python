@@ -1,0 +1,551 @@
+# Mount Helpers Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add mount helper functions (bind_tree, overlay_mount, system presets) and a builder `.mounts()` method for ergonomic filesystem setup.
+
+**Architecture:** A new `mounts.py` module with pure functions returning `list[MountPt]`. Builder gets a `.mounts()` method that extends the config's mount list. All helpers are independently testable.
+
+**Tech Stack:** Python 3.12+, dataclasses, pathlib, sys
+
+**Spec:** `docs/superpowers/specs/2026-03-31-mount-helpers-design.md`
+
+---
+
+### Task 1: Core Mount Helpers (bind_tree, bind_paths, tmpfs_mount, proc_mount)
+
+**Files:**
+- Create: `src/nsjail/mounts.py`
+- Create: `tests/test_mounts.py`
+
+- [ ] **Step 1: Write tests**
+
+Create `tests/test_mounts.py`:
+
+```python
+from nsjail.config import MountPt
+from nsjail.mounts import bind_tree, bind_paths, tmpfs_mount, proc_mount
+
+
+class TestBindTree:
+    def test_readonly_bind(self):
+        mounts = bind_tree("/usr")
+        assert len(mounts) == 1
+        assert mounts[0].src == "/usr"
+        assert mounts[0].dst == "/usr"
+        assert mounts[0].is_bind is True
+        assert mounts[0].rw is False
+
+    def test_readwrite_bind(self):
+        mounts = bind_tree("/data", readonly=False)
+        assert mounts[0].rw is True
+
+    def test_custom_dst(self):
+        mounts = bind_tree("/host/data", dst="/sandbox/data")
+        assert mounts[0].src == "/host/data"
+        assert mounts[0].dst == "/sandbox/data"
+
+    def test_returns_list_of_mountpt(self):
+        mounts = bind_tree("/usr")
+        assert isinstance(mounts, list)
+        assert isinstance(mounts[0], MountPt)
+
+
+class TestBindPaths:
+    def test_multiple_paths(self):
+        mounts = bind_paths(["/usr", "/lib", "/lib64"])
+        assert len(mounts) == 3
+        assert all(m.is_bind for m in mounts)
+        assert all(m.rw is False for m in mounts)
+
+    def test_readwrite(self):
+        mounts = bind_paths(["/data", "/workspace"], readonly=False)
+        assert all(m.rw is True for m in mounts)
+
+    def test_empty_list(self):
+        mounts = bind_paths([])
+        assert mounts == []
+
+    def test_each_mount_matches_path(self):
+        paths = ["/usr", "/lib"]
+        mounts = bind_paths(paths)
+        for path, mount in zip(paths, mounts):
+            assert mount.src == path
+            assert mount.dst == path
+
+
+class TestTmpfsMount:
+    def test_basic_tmpfs(self):
+        mounts = tmpfs_mount("/tmp")
+        assert len(mounts) == 1
+        assert mounts[0].dst == "/tmp"
+        assert mounts[0].fstype == "tmpfs"
+        assert mounts[0].rw is True
+        assert mounts[0].is_dir is True
+
+    def test_with_size(self):
+        mounts = tmpfs_mount("/tmp", size="64M")
+        assert mounts[0].options == "size=64M"
+
+    def test_without_size(self):
+        mounts = tmpfs_mount("/tmp")
+        assert mounts[0].options is None
+
+
+class TestProcMount:
+    def test_proc_mount(self):
+        mounts = proc_mount()
+        assert len(mounts) == 1
+        assert mounts[0].dst == "/proc"
+        assert mounts[0].fstype == "proc"
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `/home/teague/.local/share/venv/bin/pytest tests/test_mounts.py -v`
+Expected: FAIL with ImportError.
+
+- [ ] **Step 3: Implement core helpers**
+
+Create `src/nsjail/mounts.py`:
+
+```python
+"""Mount helper functions for common sandbox filesystem patterns.
+
+All helpers return list[MountPt] for composability. Append the results
+to a NsJailConfig's mount list or pass to the Jail builder's .mounts() method.
+"""
+
+from __future__ import annotations
+
+from nsjail.config import MountPt
+
+
+def bind_tree(path: str, *, readonly: bool = True, dst: str | None = None) -> list[MountPt]:
+    """Bind-mount a directory into the sandbox.
+
+    Args:
+        path: Host path to mount.
+        readonly: Mount read-only (default True).
+        dst: Mount point inside sandbox (defaults to same as path).
+    """
+    return [MountPt(src=path, dst=dst or path, is_bind=True, rw=not readonly)]
+
+
+def bind_paths(paths: list[str], *, readonly: bool = True) -> list[MountPt]:
+    """Bind-mount multiple directories into the sandbox."""
+    return [
+        MountPt(src=p, dst=p, is_bind=True, rw=not readonly)
+        for p in paths
+    ]
+
+
+def tmpfs_mount(path: str, *, size: str | None = None) -> list[MountPt]:
+    """Create a tmpfs mount with optional size limit."""
+    options = f"size={size}" if size else None
+    return [MountPt(dst=path, fstype="tmpfs", rw=True, is_dir=True, options=options)]
+
+
+def proc_mount() -> list[MountPt]:
+    """Mount /proc filesystem."""
+    return [MountPt(dst="/proc", fstype="proc")]
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `/home/teague/.local/share/venv/bin/pytest tests/test_mounts.py -v`
+Expected: All pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/nsjail/mounts.py tests/test_mounts.py
+git commit -m "feat: add core mount helpers (bind_tree, bind_paths, tmpfs_mount, proc_mount)"
+```
+
+---
+
+### Task 2: Overlay Mount Helper
+
+**Files:**
+- Modify: `src/nsjail/mounts.py`
+- Modify: `tests/test_mounts.py`
+
+- [ ] **Step 1: Write tests**
+
+Add to `tests/test_mounts.py`:
+
+```python
+from nsjail.mounts import overlay_mount
+
+
+class TestOverlayMount:
+    def test_basic_overlay(self):
+        mounts = overlay_mount(
+            lower="/workspace",
+            upper="/tmp/overlay/upper",
+            work="/tmp/overlay/work",
+            dst="/workspace",
+        )
+        assert len(mounts) == 1
+        m = mounts[0]
+        assert m.dst == "/workspace"
+        assert m.fstype == "overlay"
+        assert m.rw is True
+        assert "lowerdir=/workspace" in m.options
+        assert "upperdir=/tmp/overlay/upper" in m.options
+        assert "workdir=/tmp/overlay/work" in m.options
+
+    def test_overlay_options_format(self):
+        mounts = overlay_mount(
+            lower="/base",
+            upper="/scratch/upper",
+            work="/scratch/work",
+            dst="/merged",
+        )
+        expected = "lowerdir=/base,upperdir=/scratch/upper,workdir=/scratch/work"
+        assert mounts[0].options == expected
+
+    def test_returns_list_of_mountpt(self):
+        mounts = overlay_mount(lower="/a", upper="/b", work="/c", dst="/d")
+        assert isinstance(mounts, list)
+        assert isinstance(mounts[0], MountPt)
+```
+
+- [ ] **Step 2: Implement overlay_mount**
+
+Add to `src/nsjail/mounts.py`:
+
+```python
+def overlay_mount(
+    lower: str,
+    upper: str,
+    work: str,
+    dst: str,
+) -> list[MountPt]:
+    """Set up an overlay filesystem with read-only base and writable upper layer.
+
+    Args:
+        lower: Read-only base directory.
+        upper: Writable upper layer directory.
+        work: Overlay workdir (must be on same filesystem as upper).
+        dst: Mount point inside sandbox.
+    """
+    options = f"lowerdir={lower},upperdir={upper},workdir={work}"
+    return [MountPt(dst=dst, fstype="overlay", options=options, rw=True)]
+```
+
+- [ ] **Step 3: Run tests**
+
+Run: `/home/teague/.local/share/venv/bin/pytest tests/test_mounts.py -v`
+Expected: All pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/nsjail/mounts.py tests/test_mounts.py
+git commit -m "feat: add overlay_mount helper"
+```
+
+---
+
+### Task 3: System Path Presets (system_libs, dev_minimal, python_env)
+
+**Files:**
+- Modify: `src/nsjail/mounts.py`
+- Modify: `tests/test_mounts.py`
+
+- [ ] **Step 1: Write tests**
+
+Add to `tests/test_mounts.py`:
+
+```python
+import sys
+from pathlib import Path
+
+from nsjail.mounts import system_libs, dev_minimal, python_env
+
+
+class TestSystemLibs:
+    def test_returns_list(self):
+        mounts = system_libs()
+        assert isinstance(mounts, list)
+
+    def test_all_readonly(self):
+        mounts = system_libs()
+        assert all(m.rw is False for m in mounts)
+
+    def test_all_bind_mounts(self):
+        mounts = system_libs()
+        assert all(m.is_bind is True for m in mounts)
+
+    def test_only_existing_paths(self):
+        mounts = system_libs()
+        for m in mounts:
+            assert Path(m.src).exists(), f"{m.src} does not exist"
+
+    def test_includes_usr(self):
+        mounts = system_libs()
+        dsts = {m.dst for m in mounts}
+        # At least /usr/lib or /usr/bin should be present on any Linux
+        assert "/usr/lib" in dsts or "/usr/bin" in dsts
+
+
+class TestDevMinimal:
+    def test_returns_list(self):
+        mounts = dev_minimal()
+        assert isinstance(mounts, list)
+
+    def test_includes_dev_null(self):
+        dsts = {m.dst for m in dev_minimal()}
+        assert "/dev/null" in dsts
+
+    def test_includes_dev_urandom(self):
+        dsts = {m.dst for m in dev_minimal()}
+        assert "/dev/urandom" in dsts
+
+    def test_all_readonly(self):
+        mounts = dev_minimal()
+        assert all(m.rw is False for m in mounts)
+
+    def test_only_existing_devices(self):
+        mounts = dev_minimal()
+        for m in mounts:
+            assert Path(m.src).exists(), f"{m.src} does not exist"
+
+
+class TestPythonEnv:
+    def test_returns_list(self):
+        mounts = python_env()
+        assert isinstance(mounts, list)
+        assert len(mounts) >= 1
+
+    def test_all_readonly(self):
+        mounts = python_env()
+        assert all(m.rw is False for m in mounts)
+
+    def test_includes_python_prefix(self):
+        mounts = python_env()
+        dsts = {m.dst for m in mounts}
+        # Should include sys.prefix or a parent of sys.executable
+        assert any(sys.prefix in d or d in sys.prefix for d in dsts)
+```
+
+- [ ] **Step 2: Implement system presets**
+
+Add to `src/nsjail/mounts.py`:
+
+```python
+import sys
+from pathlib import Path
+
+
+_SYSTEM_LIB_PATHS = [
+    "/lib",
+    "/lib64",
+    "/usr/lib",
+    "/usr/lib64",
+    "/usr/bin",
+    "/usr/sbin",
+    "/bin",
+    "/sbin",
+]
+
+_DEV_PATHS = [
+    "/dev/null",
+    "/dev/zero",
+    "/dev/urandom",
+    "/dev/random",
+]
+
+
+def system_libs() -> list[MountPt]:
+    """Read-only bind mounts for common system library and binary paths.
+
+    Only includes paths that actually exist on the host.
+    """
+    return [
+        MountPt(src=p, dst=p, is_bind=True, rw=False)
+        for p in _SYSTEM_LIB_PATHS
+        if Path(p).exists()
+    ]
+
+
+def dev_minimal() -> list[MountPt]:
+    """Minimal /dev entries needed by most programs.
+
+    Bind-mounts /dev/null, /dev/zero, /dev/urandom, /dev/random (if they exist).
+    """
+    return [
+        MountPt(src=p, dst=p, is_bind=True, rw=False)
+        for p in _DEV_PATHS
+        if Path(p).exists()
+    ]
+
+
+def python_env() -> list[MountPt]:
+    """Mount the current Python installation read-only.
+
+    Detects the Python prefix from sys.prefix and mounts it.
+    For virtual environments, mounts both the venv and the base prefix.
+    """
+    paths: list[str] = []
+    prefix = sys.prefix
+    base_prefix = sys.base_prefix
+
+    if prefix and Path(prefix).exists():
+        paths.append(prefix)
+
+    if base_prefix and base_prefix != prefix and Path(base_prefix).exists():
+        paths.append(base_prefix)
+
+    return [
+        MountPt(src=p, dst=p, is_bind=True, rw=False)
+        for p in paths
+    ]
+```
+
+- [ ] **Step 3: Run tests**
+
+Run: `/home/teague/.local/share/venv/bin/pytest tests/test_mounts.py -v`
+Expected: All pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/nsjail/mounts.py tests/test_mounts.py
+git commit -m "feat: add system path presets (system_libs, dev_minimal, python_env)"
+```
+
+---
+
+### Task 4: Builder .mounts() Method
+
+**Files:**
+- Modify: `src/nsjail/builder.py`
+- Modify: `tests/test_builder.py`
+
+- [ ] **Step 1: Write tests**
+
+Add to `tests/test_builder.py`:
+
+```python
+from nsjail.mounts import bind_tree, system_libs, dev_minimal, tmpfs_mount
+
+
+class TestBuilderMounts:
+    def test_mounts_extends_list(self):
+        cfg = (
+            Jail()
+            .sh("true")
+            .mounts(bind_tree("/usr"))
+            .build()
+        )
+        usr_mounts = [m for m in cfg.mount if m.dst == "/usr"]
+        assert len(usr_mounts) == 1
+        assert usr_mounts[0].is_bind is True
+
+    def test_mounts_chaining(self):
+        cfg = (
+            Jail()
+            .sh("true")
+            .mounts(bind_tree("/usr"))
+            .mounts(tmpfs_mount("/tmp"))
+            .build()
+        )
+        assert len(cfg.mount) == 2
+
+    def test_mounts_with_system_libs(self):
+        cfg = (
+            Jail()
+            .sh("true")
+            .mounts(system_libs())
+            .build()
+        )
+        assert len(cfg.mount) >= 1
+        assert all(m.rw is False for m in cfg.mount)
+
+    def test_mounts_combined_with_writable(self):
+        cfg = (
+            Jail()
+            .sh("true")
+            .readonly_root()
+            .mounts(dev_minimal())
+            .writable("/workspace")
+            .build()
+        )
+        # Should have root + dev entries + workspace
+        assert len(cfg.mount) >= 3
+
+    def test_mounts_returns_self(self):
+        builder = Jail().sh("true")
+        result = builder.mounts(bind_tree("/usr"))
+        assert result is builder
+```
+
+- [ ] **Step 2: Implement .mounts()**
+
+Add this method to the Jail class in `src/nsjail/builder.py`, in the Filesystem section:
+
+```python
+    def mounts(self, mount_list: list[MountPt]) -> Jail:
+        """Add a list of MountPt entries to the config."""
+        self._cfg.mount.extend(mount_list)
+        return self
+```
+
+- [ ] **Step 3: Run tests**
+
+Run: `/home/teague/.local/share/venv/bin/pytest tests/test_builder.py -v`
+Expected: All pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/nsjail/builder.py tests/test_builder.py
+git commit -m "feat: add .mounts() method to Jail builder"
+```
+
+---
+
+### Task 5: Public API Exports + Push
+
+**Files:**
+- Modify: `src/nsjail/__init__.py`
+
+- [ ] **Step 1: Update __init__.py**
+
+Add mount imports and exports to `src/nsjail/__init__.py`:
+
+```python
+from nsjail.mounts import (
+    bind_tree, bind_paths, overlay_mount,
+    system_libs, dev_minimal, python_env,
+    proc_mount, tmpfs_mount,
+)
+```
+
+Add to `__all__`:
+```python
+    "bind_tree",
+    "bind_paths",
+    "dev_minimal",
+    "overlay_mount",
+    "proc_mount",
+    "python_env",
+    "system_libs",
+    "tmpfs_mount",
+```
+
+- [ ] **Step 2: Run full test suite**
+
+Run: `/home/teague/.local/share/venv/bin/pytest tests/ -q`
+Expected: All unit tests pass, integration tests skip.
+
+- [ ] **Step 3: Commit and push**
+
+```bash
+git add src/nsjail/__init__.py
+git commit -m "feat: export mount helpers from public API"
+git push
+```
