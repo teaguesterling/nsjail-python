@@ -11,6 +11,8 @@ from unittest.mock import MagicMock, patch
 from nsjail import Jail, NsJailConfig, MountPt, Exe, sandbox, Runner
 from nsjail.runner import NsJailResult
 from nsjail.serializers import to_textproto, to_cli_args, to_file
+from nsjail.seccomp import SeccompPolicy, MINIMAL, READONLY
+from nsjail.cgroup import CgroupStats
 
 
 class TestBuilderToTextproto:
@@ -116,3 +118,44 @@ class TestProtobufIntegration:
         )
         msg = to_protobuf(cfg)
         assert msg.time_limit == 30
+
+
+class TestSeccompIntegration:
+    def test_builder_with_seccomp_to_textproto(self):
+        cfg = (
+            Jail()
+            .sh("echo hi")
+            .seccomp(MINIMAL)
+            .build()
+        )
+        text = to_textproto(cfg)
+        assert "seccomp_string:" in text
+        assert "read" in text
+
+    def test_custom_policy_to_textproto(self):
+        policy = (
+            SeccompPolicy("custom")
+            .allow("read", "write")
+            .deny("execve")
+            .default_kill()
+        )
+        cfg = Jail().sh("echo hi").seccomp(policy).build()
+        text = to_textproto(cfg)
+        assert "seccomp_string:" in text
+
+
+class TestCgroupStatsIntegration:
+    def test_result_with_cgroup_stats(self):
+        stats = CgroupStats(
+            memory_peak_bytes=512 * 1024 * 1024,
+            cpu_usage_ns=2_500_000_000,
+            pids_current=12,
+        )
+        result = NsJailResult(
+            returncode=0, stdout=b"", stderr=b"",
+            config_path=None, nsjail_args=[], timed_out=False,
+            oom_killed=False, signaled=False, inner_returncode=0,
+            cgroup_stats=stats,
+        )
+        assert result.cgroup_stats.memory_peak_bytes == 512 * 1024 * 1024
+        assert result.cgroup_stats.cpu_usage_ns == 2_500_000_000
