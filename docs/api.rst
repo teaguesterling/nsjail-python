@@ -58,6 +58,44 @@ Serializers
 
 .. autofunction:: nsjail.serializers.to_file
 
+Seccomp
+-------
+
+.. autoclass:: nsjail.SeccompPolicy
+   :members:
+
+.. autodata:: nsjail.MINIMAL
+.. autodata:: nsjail.DEFAULT_LOG
+.. autodata:: nsjail.READONLY
+
+Cgroup Stats
+------------
+
+.. autoclass:: nsjail.CgroupStats
+   :members:
+
+.. autoclass:: nsjail.cgroup.CgroupMonitor
+   :members:
+
+Mount Helpers
+-------------
+
+.. autofunction:: nsjail.bind_tree
+
+.. autofunction:: nsjail.bind_paths
+
+.. autofunction:: nsjail.overlay_mount
+
+.. autofunction:: nsjail.system_libs
+
+.. autofunction:: nsjail.dev_minimal
+
+.. autofunction:: nsjail.python_env
+
+.. autofunction:: nsjail.proc_mount
+
+.. autofunction:: nsjail.tmpfs_mount
+
 Exceptions
 ----------
 

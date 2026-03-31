@@ -6,15 +6,17 @@ Installation
 
 .. code-block:: bash
 
+   # Core library (expects nsjail on PATH)
    pip install nsjail-python
 
-The default install includes a pre-built nsjail binary. For other options:
+   # Include pre-built nsjail binary (Linux x86_64/aarch64)
+   pip install nsjail-python[binary]
 
-.. code-block:: bash
+   # Build nsjail from source during install
+   pip install nsjail-python[build]
 
-   pip install nsjail-python[system]  # Use system-provided nsjail
-   pip install nsjail-python[build]   # Build nsjail from source
-   pip install nsjail-python[proto]   # Enable protobuf validation
+   # Enable protobuf validation
+   pip install nsjail-python[proto]
 
 Three API Levels
 ----------------
@@ -82,6 +84,8 @@ Serialization
 Running nsjail
 --------------
 
+**Sync execution:**
+
 .. code-block:: python
 
    from nsjail import Runner, Jail
@@ -98,3 +102,105 @@ Running nsjail
 
    result = runner.run(extra_args=["tests/unit/", "-x"])
    print(result.returncode, result.stdout)
+
+**Async execution:**
+
+.. code-block:: python
+
+   result = await runner.async_run(extra_args=["tests/unit/"])
+
+**Direct from builder:**
+
+.. code-block:: python
+
+   result = (
+       Jail()
+       .sh("echo hello")
+       .timeout(10)
+       .run()  # Creates a default Runner
+   )
+
+Mount Helpers
+-------------
+
+Ergonomic functions for common filesystem patterns:
+
+.. code-block:: python
+
+   from nsjail import (
+       Jail, system_libs, dev_minimal, python_env,
+       bind_tree, tmpfs_mount, overlay_mount,
+   )
+
+   cfg = (
+       Jail()
+       .sh("python script.py")
+       .readonly_root()
+       .mounts(system_libs())       # /lib, /usr/lib, /usr/bin, etc.
+       .mounts(dev_minimal())       # /dev/null, /dev/zero, /dev/urandom
+       .mounts(python_env())        # Current Python installation
+       .mounts(tmpfs_mount("/tmp", size="64M"))
+       .writable("/workspace")
+       .build()
+   )
+
+**Overlay filesystem (copy-on-write):**
+
+.. code-block:: python
+
+   from nsjail import overlay_mount
+
+   cfg = (
+       Jail()
+       .sh("make build")
+       .mounts(overlay_mount(
+           lower="/workspace",           # read-only base
+           upper="/tmp/overlay/upper",   # writable layer
+           work="/tmp/overlay/work",     # overlay workdir
+           dst="/workspace",
+       ))
+       .build()
+   )
+
+Seccomp Policies
+----------------
+
+Build seccomp policies in Python instead of writing raw Kafel:
+
+.. code-block:: python
+
+   from nsjail import Jail, SeccompPolicy, MINIMAL
+
+   # Use a preset
+   cfg = Jail().sh("echo hi").seccomp(MINIMAL).build()
+
+   # Or build a custom policy
+   policy = (
+       SeccompPolicy("custom")
+       .allow("read", "write", "close", "exit_group")
+       .deny("execve", "fork")
+       .default_kill()
+   )
+   cfg = Jail().sh("echo hi").seccomp(policy).build()
+
+**Available presets:** ``MINIMAL``, ``DEFAULT_LOG``, ``READONLY``
+
+Cgroup Stats
+------------
+
+Capture resource usage during sandbox execution:
+
+.. code-block:: python
+
+   from nsjail import Runner
+
+   runner = Runner(
+       base_config=cfg,
+       collect_cgroup_stats=True,
+   )
+   result = runner.run()
+
+   if result.cgroup_stats:
+       print(f"Peak memory: {result.cgroup_stats.memory_peak_bytes}")
+       print(f"CPU time: {result.cgroup_stats.cpu_usage_ns}ns")
+       print(f"Processes: {result.cgroup_stats.pids_current}")
