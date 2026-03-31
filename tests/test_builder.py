@@ -4,6 +4,7 @@ from nsjail.builder import Jail
 from nsjail.config import NsJailConfig
 from nsjail.enums import Mode
 from nsjail.runner import NsJailResult, Runner
+from nsjail.seccomp import SeccompPolicy, MINIMAL
 
 
 class TestBuilderCommand:
@@ -175,3 +176,32 @@ class TestBuilderRun:
         mock_run.assert_called_once()
         _, kwargs = mock_run.call_args
         assert kwargs.get("extra_args") == ["--verbose"]
+
+
+class TestBuilderSeccomp:
+    def test_seccomp_with_policy(self):
+        policy = SeccompPolicy("test").allow("read").default_kill()
+        cfg = Jail().sh("true").seccomp(policy).build()
+        assert len(cfg.seccomp_string) == 1
+        assert "ALLOW { read }" in cfg.seccomp_string[0]
+
+    def test_seccomp_with_preset(self):
+        cfg = Jail().sh("true").seccomp(MINIMAL).build()
+        assert len(cfg.seccomp_string) == 1
+        assert "read" in cfg.seccomp_string[0]
+
+    def test_seccomp_with_raw_string(self):
+        raw = "POLICY p { ALLOW { read } } USE p DEFAULT KILL"
+        cfg = Jail().sh("true").seccomp(raw).build()
+        assert len(cfg.seccomp_string) == 1
+        assert cfg.seccomp_string[0] == raw
+
+    def test_seccomp_multiple(self):
+        cfg = (
+            Jail()
+            .sh("true")
+            .seccomp(MINIMAL)
+            .seccomp("POLICY extra { ALLOW { openat } } USE extra DEFAULT KILL")
+            .build()
+        )
+        assert len(cfg.seccomp_string) == 2

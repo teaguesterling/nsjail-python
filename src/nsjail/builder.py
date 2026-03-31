@@ -6,6 +6,7 @@ from typing import Literal, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nsjail.runner import Runner, NsJailResult
+    from nsjail.seccomp import SeccompPolicy
 
 from nsjail.config import Exe, IdMap, MountPt, NsJailConfig
 from nsjail.presets import (
@@ -112,6 +113,15 @@ class Jail:
 
     def seccomp_log(self) -> Jail:
         apply_seccomp_log(self._cfg)
+        return self
+
+    def seccomp(self, policy: SeccompPolicy | str) -> Jail:
+        """Add a seccomp policy. Accepts a SeccompPolicy, preset, or raw Kafel string."""
+        from nsjail.seccomp import SeccompPolicy as _SeccompPolicy
+        if isinstance(policy, _SeccompPolicy):
+            self._cfg.seccomp_string.append(str(policy))
+        else:
+            self._cfg.seccomp_string.append(policy)
         return self
 
     def uid_map(self, *, inside: int = 0, outside: int = 1000, count: int = 1) -> Jail:
