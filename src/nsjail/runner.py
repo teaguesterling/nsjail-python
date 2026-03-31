@@ -11,6 +11,7 @@ from dataclasses import dataclass, fields as dc_fields
 from pathlib import Path
 from typing import Any
 
+from nsjail.cgroup import CgroupMonitor, CgroupStats
 from nsjail.config import NsJailConfig
 from nsjail.exceptions import NsjailNotFound
 from nsjail.serializers import to_file
@@ -92,6 +93,7 @@ class NsJailResult:
     oom_killed: bool
     signaled: bool
     inner_returncode: int | None
+    cgroup_stats: CgroupStats | None = None
 
 
 class Runner:
@@ -105,12 +107,16 @@ class Runner:
         render_mode: str = "textproto",
         capture_output: bool = True,
         keep_config: bool = False,
+        collect_cgroup_stats: bool = False,
+        cgroup_poll_interval: float = 0.1,
     ) -> None:
         self._nsjail_path = nsjail_path
         self._base_config = copy.deepcopy(base_config) if base_config else NsJailConfig()
         self._render_mode = render_mode
         self._capture_output = capture_output
         self._keep_config = keep_config
+        self._collect_cgroup_stats = collect_cgroup_stats
+        self._cgroup_poll_interval = cgroup_poll_interval
 
     def _prepare_run(
         self,
@@ -166,6 +172,7 @@ class Runner:
         stderr: bytes,
         config_path: Path | None,
         nsjail_args: list[str],
+        cgroup_stats: CgroupStats | None = None,
     ) -> NsJailResult:
         """Build an NsJailResult from raw subprocess output."""
         timed_out = returncode == 109
@@ -182,7 +189,30 @@ class Runner:
             oom_killed=oom_killed,
             signaled=signaled,
             inner_returncode=returncode if returncode < 100 else None,
+            cgroup_stats=cgroup_stats,
         )
+
+    def _start_cgroup_monitor(self, cfg: NsJailConfig, pid: int) -> CgroupMonitor:
+        """Create and start a CgroupMonitor for the given nsjail process."""
+        use_v2 = cfg.use_cgroupv2 or cfg.detect_cgroupv2
+        if use_v2:
+            cgroup_path = Path(cfg.cgroupv2_mount) / cfg.cgroup_mem_parent / f"NSJAIL.{pid}"
+            monitor = CgroupMonitor(
+                cgroup_path=cgroup_path,
+                poll_interval=self._cgroup_poll_interval,
+                use_v2=True,
+            )
+        else:
+            monitor = CgroupMonitor(
+                cgroup_path=Path("/dev/null"),
+                poll_interval=self._cgroup_poll_interval,
+                use_v2=False,
+                v1_memory_path=Path(cfg.cgroup_mem_mount) / cfg.cgroup_mem_parent / f"NSJAIL.{pid}" if cfg.cgroup_mem_max else None,
+                v1_cpu_path=Path(cfg.cgroup_cpu_mount) / cfg.cgroup_cpu_parent / f"NSJAIL.{pid}" if cfg.cgroup_cpu_ms_per_sec else None,
+                v1_pids_path=Path(cfg.cgroup_pids_mount) / cfg.cgroup_pids_parent / f"NSJAIL.{pid}" if cfg.cgroup_pids_max else None,
+            )
+        monitor.start()
+        return monitor
 
     def run(
         self,
@@ -192,25 +222,39 @@ class Runner:
         extra_args: list[str] | None = None,
         timeout: float | None = None,
     ) -> NsJailResult:
-        nsjail_args, config_path, _cfg = self._prepare_run(overrides, override_fields, extra_args)
+        nsjail_args, config_path, cfg = self._prepare_run(overrides, override_fields, extra_args)
+
+        cgroup_monitor = None
+        cgroup_stats = None
 
         try:
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 nsjail_args,
-                capture_output=self._capture_output,
-                timeout=timeout,
+                stdout=subprocess.PIPE if self._capture_output else None,
+                stderr=subprocess.PIPE if self._capture_output else None,
             )
+
+            if self._collect_cgroup_stats:
+                cgroup_monitor = self._start_cgroup_monitor(cfg, proc.pid)
+
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
         finally:
+            if cgroup_monitor:
+                cgroup_stats = cgroup_monitor.stop()
             if config_path and not self._keep_config:
                 config_path.unlink(missing_ok=True)
                 config_path = None
 
         return self._make_result(
-            returncode=result.returncode,
-            stdout=result.stdout if self._capture_output else b"",
-            stderr=result.stderr if self._capture_output else b"",
+            returncode=proc.returncode,
+            stdout=stdout if self._capture_output else b"",
+            stderr=stderr if self._capture_output else b"",
             config_path=config_path,
             nsjail_args=nsjail_args,
+            cgroup_stats=cgroup_stats,
         )
 
     async def async_run(
@@ -271,4 +315,6 @@ class Runner:
             render_mode=self._render_mode,
             capture_output=self._capture_output,
             keep_config=self._keep_config,
+            collect_cgroup_stats=self._collect_cgroup_stats,
+            cgroup_poll_interval=self._cgroup_poll_interval,
         )

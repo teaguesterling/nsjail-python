@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nsjail.cgroup import CgroupStats
 from nsjail.config import Exe, MountPt, NsJailConfig
 from nsjail.exceptions import NsjailNotFound
 from nsjail.runner import NsJailResult, Runner, merge_configs, resolve_nsjail_path
@@ -178,6 +179,7 @@ class TestAsyncRun:
         assert result.stdout == b"hello\n"
 
     def test_async_run_with_extra_args(self):
+
         base = NsJailConfig(exec_bin=Exe(path="python", arg=["main.py"]))
         runner = Runner(base_config=base, nsjail_path="/usr/bin/nsjail")
 
@@ -195,3 +197,30 @@ class TestAsyncRun:
             result = asyncio.run(runner.async_run(extra_args=["--verbose"]))
 
         assert result.returncode == 0
+
+
+class TestRunnerCgroupStats:
+    def test_nsjail_result_has_cgroup_stats_field(self):
+        result = NsJailResult(
+            returncode=0, stdout=b"", stderr=b"",
+            config_path=None, nsjail_args=[], timed_out=False,
+            oom_killed=False, signaled=False, inner_returncode=0,
+            cgroup_stats=CgroupStats(memory_peak_bytes=1024),
+        )
+        assert result.cgroup_stats.memory_peak_bytes == 1024
+
+    def test_nsjail_result_cgroup_stats_default_none(self):
+        result = NsJailResult(
+            returncode=0, stdout=b"", stderr=b"",
+            config_path=None, nsjail_args=[], timed_out=False,
+            oom_killed=False, signaled=False, inner_returncode=0,
+        )
+        assert result.cgroup_stats is None
+
+    def test_runner_collect_cgroup_stats_flag(self):
+        runner = Runner(nsjail_path="/usr/bin/nsjail", collect_cgroup_stats=True)
+        assert runner._collect_cgroup_stats is True
+
+    def test_runner_default_no_cgroup_collection(self):
+        runner = Runner(nsjail_path="/usr/bin/nsjail")
+        assert runner._collect_cgroup_stats is False
