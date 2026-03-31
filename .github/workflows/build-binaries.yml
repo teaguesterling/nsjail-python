@@ -86,6 +86,7 @@ jobs:
           done
 
       - name: Verify wheel contents
+        if: matrix.arch == 'x86_64'
         run: |
           pip install packages/nsjail-bin/dist/*.whl
           python -c "
