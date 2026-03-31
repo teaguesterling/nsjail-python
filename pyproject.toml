@@ -48,3 +48,4 @@ packages = ["src/nsjail"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["integration: tests requiring real nsjail binary"]
