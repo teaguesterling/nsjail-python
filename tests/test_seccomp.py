@@ -82,3 +82,39 @@ class TestSeccompPolicyBuilder:
         text = str(policy)
         assert "read" in text
         assert "write" in text
+
+
+from nsjail.seccomp import MINIMAL, DEFAULT_LOG, READONLY
+
+
+class TestSeccompPresets:
+    def test_minimal_is_seccomp_policy(self):
+        assert isinstance(MINIMAL, SeccompPolicy)
+
+    def test_minimal_allows_basic_syscalls(self):
+        text = str(MINIMAL)
+        assert "read" in text
+        assert "write" in text
+        assert "close" in text
+        assert "exit_group" in text
+        assert "DEFAULT KILL" in text
+
+    def test_minimal_valid_kafel(self):
+        text = str(MINIMAL)
+        assert "POLICY " in text
+        assert "ALLOW {" in text
+        assert "} USE " in text
+
+    def test_default_log_uses_log_default(self):
+        text = str(DEFAULT_LOG)
+        assert "DEFAULT LOG" in text
+
+    def test_readonly_blocks_writes(self):
+        text = str(READONLY)
+        assert "ERRNO" in text
+        assert "DEFAULT" in text
+
+    def test_presets_are_independent(self):
+        t1 = str(MINIMAL)
+        t2 = str(MINIMAL)
+        assert t1 == t2

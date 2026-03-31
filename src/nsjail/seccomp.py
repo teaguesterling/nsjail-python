@@ -63,3 +63,44 @@ class SeccompPolicy:
             lines.append(f"  {action} {{ {', '.join(syscalls)} }}")
         lines.append(f"}} USE {self._name} DEFAULT {self._default}")
         return "\n".join(lines)
+
+
+# --- Presets ---
+
+MINIMAL = (
+    SeccompPolicy("minimal")
+    .allow(
+        "read", "write", "close", "exit", "exit_group",
+        "brk", "mmap", "munmap", "mprotect", "mremap",
+        "rt_sigaction", "rt_sigprocmask", "rt_sigreturn",
+        "clock_gettime", "clock_getres", "gettimeofday",
+        "getpid", "gettid", "getuid", "getgid", "geteuid", "getegid",
+        "futex", "nanosleep", "sched_yield",
+        "access", "fstat", "stat", "lstat",
+        "arch_prctl", "set_tid_address", "set_robust_list",
+        "prlimit64", "getrandom",
+    )
+    .default_kill()
+)
+
+DEFAULT_LOG = SeccompPolicy("log_all").default_log()
+
+READONLY = (
+    SeccompPolicy("readonly")
+    .allow(
+        "read", "pread64", "readv", "close", "exit", "exit_group",
+        "brk", "mmap", "munmap", "mprotect", "mremap",
+        "rt_sigaction", "rt_sigprocmask", "rt_sigreturn",
+        "clock_gettime", "clock_getres", "gettimeofday",
+        "getpid", "gettid", "getuid", "getgid", "geteuid", "getegid",
+        "futex", "nanosleep", "sched_yield",
+        "access", "fstat", "stat", "lstat", "statfs",
+        "openat", "fstatfs", "getdents64", "lseek",
+        "arch_prctl", "set_tid_address", "set_robust_list",
+        "prlimit64", "getrandom", "ioctl",
+    )
+    .errno(1, "write", "pwrite64", "writev", "truncate", "ftruncate")
+    .deny("execve", "execveat", "fork", "vfork", "clone", "clone3")
+    .errno(1, "socket", "connect", "bind", "listen", "accept", "accept4")
+    .default_errno(1)
+)
