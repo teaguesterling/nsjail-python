@@ -70,11 +70,20 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build wheel
+      - name: Build and retag wheel
+        env:
+          ARCH: ${{ matrix.arch }}
         run: |
-          pip install build hatchling
+          pip install build hatchling wheel
           cd packages/nsjail-bin
           python -m build --wheel
+          # Retag wheel: PyPI needs manylinux tag, not linux_*
+          # Also fix to py3-none since binary isn't Python-version-specific
+          cd dist
+          for whl in *.whl; do
+            python -m wheel tags --python-tag py3 --abi-tag none \
+              --platform-tag "manylinux_2_28_${ARCH}" "$whl" --remove
+          done
 
       - name: Verify wheel contents
         run: |
