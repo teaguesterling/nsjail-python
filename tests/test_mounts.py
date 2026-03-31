@@ -1,6 +1,10 @@
+import sys
+from pathlib import Path
+
 from nsjail.config import MountPt
 from nsjail.mounts import bind_tree, bind_paths, tmpfs_mount, proc_mount
 from nsjail.mounts import overlay_mount
+from nsjail.mounts import system_libs, dev_minimal, python_env
 
 
 class TestBindTree:
@@ -107,3 +111,66 @@ class TestOverlayMount:
         mounts = overlay_mount(lower="/a", upper="/b", work="/c", dst="/d")
         assert isinstance(mounts, list)
         assert isinstance(mounts[0], MountPt)
+
+
+class TestSystemLibs:
+    def test_returns_list(self):
+        mounts = system_libs()
+        assert isinstance(mounts, list)
+
+    def test_all_readonly(self):
+        mounts = system_libs()
+        assert all(m.rw is False for m in mounts)
+
+    def test_all_bind_mounts(self):
+        mounts = system_libs()
+        assert all(m.is_bind is True for m in mounts)
+
+    def test_only_existing_paths(self):
+        mounts = system_libs()
+        for m in mounts:
+            assert Path(m.src).exists(), f"{m.src} does not exist"
+
+    def test_includes_usr(self):
+        mounts = system_libs()
+        dsts = {m.dst for m in mounts}
+        assert "/usr/lib" in dsts or "/usr/bin" in dsts
+
+
+class TestDevMinimal:
+    def test_returns_list(self):
+        mounts = dev_minimal()
+        assert isinstance(mounts, list)
+
+    def test_includes_dev_null(self):
+        dsts = {m.dst for m in dev_minimal()}
+        assert "/dev/null" in dsts
+
+    def test_includes_dev_urandom(self):
+        dsts = {m.dst for m in dev_minimal()}
+        assert "/dev/urandom" in dsts
+
+    def test_all_readonly(self):
+        mounts = dev_minimal()
+        assert all(m.rw is False for m in mounts)
+
+    def test_only_existing_devices(self):
+        mounts = dev_minimal()
+        for m in mounts:
+            assert Path(m.src).exists(), f"{m.src} does not exist"
+
+
+class TestPythonEnv:
+    def test_returns_list(self):
+        mounts = python_env()
+        assert isinstance(mounts, list)
+        assert len(mounts) >= 1
+
+    def test_all_readonly(self):
+        mounts = python_env()
+        assert all(m.rw is False for m in mounts)
+
+    def test_includes_python_prefix(self):
+        mounts = python_env()
+        dsts = {m.dst for m in mounts}
+        assert any(sys.prefix in d or d in sys.prefix for d in dsts)
