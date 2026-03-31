@@ -30,3 +30,14 @@ def tmpfs_mount(path: str, *, size: str | None = None) -> list[MountPt]:
 def proc_mount() -> list[MountPt]:
     """Mount /proc filesystem."""
     return [MountPt(dst="/proc", fstype="proc")]
+
+
+def overlay_mount(
+    lower: str,
+    upper: str,
+    work: str,
+    dst: str,
+) -> list[MountPt]:
+    """Set up an overlay filesystem with read-only base and writable upper layer."""
+    options = f"lowerdir={lower},upperdir={upper},workdir={work}"
+    return [MountPt(dst=dst, fstype="overlay", options=options, rw=True)]

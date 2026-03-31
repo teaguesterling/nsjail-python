@@ -1,5 +1,6 @@
 from nsjail.config import MountPt
 from nsjail.mounts import bind_tree, bind_paths, tmpfs_mount, proc_mount
+from nsjail.mounts import overlay_mount
 
 
 class TestBindTree:
@@ -73,3 +74,36 @@ class TestProcMount:
         assert len(mounts) == 1
         assert mounts[0].dst == "/proc"
         assert mounts[0].fstype == "proc"
+
+
+class TestOverlayMount:
+    def test_basic_overlay(self):
+        mounts = overlay_mount(
+            lower="/workspace",
+            upper="/tmp/overlay/upper",
+            work="/tmp/overlay/work",
+            dst="/workspace",
+        )
+        assert len(mounts) == 1
+        m = mounts[0]
+        assert m.dst == "/workspace"
+        assert m.fstype == "overlay"
+        assert m.rw is True
+        assert "lowerdir=/workspace" in m.options
+        assert "upperdir=/tmp/overlay/upper" in m.options
+        assert "workdir=/tmp/overlay/work" in m.options
+
+    def test_overlay_options_format(self):
+        mounts = overlay_mount(
+            lower="/base",
+            upper="/scratch/upper",
+            work="/scratch/work",
+            dst="/merged",
+        )
+        expected = "lowerdir=/base,upperdir=/scratch/upper,workdir=/scratch/work"
+        assert mounts[0].options == expected
+
+    def test_returns_list_of_mountpt(self):
+        mounts = overlay_mount(lower="/a", upper="/b", work="/c", dst="/d")
+        assert isinstance(mounts, list)
+        assert isinstance(mounts[0], MountPt)
