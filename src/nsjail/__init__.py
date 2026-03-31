@@ -6,11 +6,19 @@ from nsjail.builder import Jail
 from nsjail.cgroup import CgroupStats
 from nsjail.presets import sandbox
 from nsjail.runner import NsJailResult, Runner
+from nsjail.mounts import (
+    bind_tree, bind_paths, overlay_mount,
+    system_libs, dev_minimal, python_env,
+    proc_mount, tmpfs_mount,
+)
 from nsjail.seccomp import SeccompPolicy, MINIMAL, DEFAULT_LOG, READONLY
 
 __all__ = [
     "CgroupStats",
     "DEFAULT_LOG",
+    "bind_tree",
+    "bind_paths",
+    "dev_minimal",
     "Exe",
     "IdMap",
     "Jail",
@@ -20,9 +28,14 @@ __all__ = [
     "MountPt",
     "NsJailConfig",
     "NsJailResult",
+    "overlay_mount",
+    "proc_mount",
+    "python_env",
     "READONLY",
     "RLimitType",
     "Runner",
     "SeccompPolicy",
     "sandbox",
+    "system_libs",
+    "tmpfs_mount",
 ]
