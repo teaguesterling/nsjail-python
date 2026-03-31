@@ -99,6 +99,11 @@ class Jail:
         )
         return self
 
+    def mounts(self, mount_list: list[MountPt]) -> Jail:
+        """Add a list of MountPt entries to the config."""
+        self._cfg.mount.extend(mount_list)
+        return self
+
     # --- Environment ---
 
     def env(self, var: str) -> Jail:

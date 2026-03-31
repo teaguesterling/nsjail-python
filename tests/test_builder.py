@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from nsjail.builder import Jail
 from nsjail.config import NsJailConfig
 from nsjail.enums import Mode
+from nsjail.mounts import bind_tree, system_libs, dev_minimal, tmpfs_mount
 from nsjail.runner import NsJailResult, Runner
 from nsjail.seccomp import SeccompPolicy, MINIMAL
 
@@ -205,3 +206,52 @@ class TestBuilderSeccomp:
             .build()
         )
         assert len(cfg.seccomp_string) == 2
+
+
+class TestBuilderMounts:
+    def test_mounts_extends_list(self):
+        cfg = (
+            Jail()
+            .sh("true")
+            .mounts(bind_tree("/usr"))
+            .build()
+        )
+        usr_mounts = [m for m in cfg.mount if m.dst == "/usr"]
+        assert len(usr_mounts) == 1
+        assert usr_mounts[0].is_bind is True
+
+    def test_mounts_chaining(self):
+        cfg = (
+            Jail()
+            .sh("true")
+            .mounts(bind_tree("/usr"))
+            .mounts(tmpfs_mount("/tmp"))
+            .build()
+        )
+        assert len(cfg.mount) == 2
+
+    def test_mounts_with_system_libs(self):
+        cfg = (
+            Jail()
+            .sh("true")
+            .mounts(system_libs())
+            .build()
+        )
+        assert len(cfg.mount) >= 1
+        assert all(m.rw is False for m in cfg.mount)
+
+    def test_mounts_combined_with_writable(self):
+        cfg = (
+            Jail()
+            .sh("true")
+            .readonly_root()
+            .mounts(dev_minimal())
+            .writable("/workspace")
+            .build()
+        )
+        assert len(cfg.mount) >= 3
+
+    def test_mounts_returns_self(self):
+        builder = Jail().sh("true")
+        result = builder.mounts(bind_tree("/usr"))
+        assert result is builder
