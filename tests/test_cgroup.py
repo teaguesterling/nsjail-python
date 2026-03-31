@@ -1,4 +1,8 @@
+import time
+import threading
+
 from nsjail.cgroup import CgroupStats, parse_v1_stats, parse_v2_stats
+from nsjail.cgroup import CgroupMonitor
 
 
 class TestCgroupStats:
@@ -77,3 +81,49 @@ class TestParseV2Stats:
     def test_missing_files(self, tmp_path):
         stats = parse_v2_stats(tmp_path)
         assert stats == CgroupStats()
+
+
+class TestCgroupMonitor:
+    def test_monitor_captures_stats(self, tmp_path):
+        (tmp_path / "memory.peak").write_text("1048576\n")
+        (tmp_path / "memory.current").write_text("524288\n")
+        (tmp_path / "pids.current").write_text("3\n")
+
+        monitor = CgroupMonitor(cgroup_path=tmp_path, poll_interval=0.05, use_v2=True)
+        monitor.start()
+        time.sleep(0.15)
+        stats = monitor.stop()
+
+        assert stats.memory_peak_bytes == 1048576
+        assert stats.memory_current_bytes == 524288
+        assert stats.pids_current == 3
+
+    def test_monitor_survives_missing_files(self, tmp_path):
+        monitor = CgroupMonitor(cgroup_path=tmp_path, poll_interval=0.05, use_v2=True)
+        monitor.start()
+        time.sleep(0.1)
+        stats = monitor.stop()
+        assert stats == CgroupStats()
+
+    def test_monitor_captures_changing_values(self, tmp_path):
+        (tmp_path / "memory.current").write_text("100\n")
+        (tmp_path / "memory.peak").write_text("100\n")
+
+        monitor = CgroupMonitor(cgroup_path=tmp_path, poll_interval=0.05, use_v2=True)
+        monitor.start()
+        time.sleep(0.1)
+
+        (tmp_path / "memory.current").write_text("200\n")
+        (tmp_path / "memory.peak").write_text("200\n")
+        time.sleep(0.1)
+
+        stats = monitor.stop()
+        assert stats.memory_peak_bytes == 200
+
+    def test_monitor_stops_cleanly(self, tmp_path):
+        (tmp_path / "memory.peak").write_text("1000\n")
+        monitor = CgroupMonitor(cgroup_path=tmp_path, poll_interval=0.05, use_v2=True)
+        monitor.start()
+        time.sleep(0.1)
+        stats = monitor.stop()
+        assert stats is not None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -74,3 +75,53 @@ def parse_v2_stats(cgroup_path: Path) -> CgroupStats:
         pass
 
     return stats
+
+
+class CgroupMonitor:
+    """Background thread that polls cgroup stat files."""
+
+    def __init__(
+        self,
+        cgroup_path: Path,
+        poll_interval: float = 0.1,
+        use_v2: bool = False,
+        *,
+        v1_memory_path: Path | None = None,
+        v1_cpu_path: Path | None = None,
+        v1_pids_path: Path | None = None,
+    ) -> None:
+        self._cgroup_path = cgroup_path
+        self._poll_interval = poll_interval
+        self._use_v2 = use_v2
+        self._v1_memory_path = v1_memory_path
+        self._v1_cpu_path = v1_cpu_path
+        self._v1_pids_path = v1_pids_path
+        self._stats = CgroupStats()
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> CgroupStats:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+        return self._stats
+
+    def _poll_loop(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                if self._use_v2:
+                    self._stats = parse_v2_stats(self._cgroup_path)
+                else:
+                    self._stats = parse_v1_stats(
+                        memory_path=self._v1_memory_path,
+                        cpu_path=self._v1_cpu_path,
+                        pids_path=self._v1_pids_path,
+                    )
+            except Exception:
+                pass
+            self._stop_event.wait(self._poll_interval)
