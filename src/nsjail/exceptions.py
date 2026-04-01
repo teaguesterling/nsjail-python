@@ -27,3 +27,11 @@ class NsjailNotFound(NsjailError):
             "  apt-get install nsjail              # system package\n"
             "Or specify the path: Runner(nsjail_path='/path/to/nsjail')"
         )
+
+
+class JailedExecutionError(NsjailError):
+    """Raised when a jailed function execution fails."""
+
+    def __init__(self, message: str, original_traceback: str | None = None) -> None:
+        self.original_traceback = original_traceback
+        super().__init__(message)
