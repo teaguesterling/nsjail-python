@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from nsjail._worker import _get_serializer
-from nsjail.call import _build_jail_config, _serialize_input, _deserialize_output
+from nsjail.call import _build_jail_config, _serialize_input, _deserialize_output, jailed, JailContext
 from nsjail.config import NsJailConfig
 from nsjail.exceptions import JailedExecutionError
 
@@ -104,3 +104,72 @@ class TestBuildJailConfig:
         io_mounts = [m for m in cfg.mount if m.dst == "/tmp/test_io"]
         assert len(io_mounts) >= 1
         assert io_mounts[0].rw is True
+
+
+class TestJailedDecorator:
+    def test_decorator_wraps_function(self):
+        @jailed(timeout_sec=10)
+        def add(a, b):
+            return a + b
+
+        assert callable(add)
+        assert add.__name__ == "add"
+
+    def test_decorator_calls_jail_call(self):
+        with patch("nsjail.call.jail_call", return_value=42) as mock:
+            @jailed(timeout_sec=10, memory_mb=256)
+            def compute(x):
+                return x * 2
+
+            result = compute(21)
+
+        assert result == 42
+        mock.assert_called_once()
+        call_kwargs = mock.call_args.kwargs
+        assert call_kwargs["timeout_sec"] == 10
+        assert call_kwargs["memory_mb"] == 256
+
+    def test_decorator_passes_args_and_kwargs(self):
+        with patch("nsjail.call.jail_call", return_value="ok") as mock:
+            @jailed(timeout_sec=10)
+            def greet(name, greeting="hello"):
+                return f"{greeting} {name}"
+
+            greet("world", greeting="hi")
+
+        call_args = mock.call_args
+        assert call_args[0][1] == ("world",)
+        assert call_args[0][2] == {"greeting": "hi"}
+
+
+class TestJailContext:
+    def test_context_manager_creates_io_dir(self):
+        with JailContext(timeout_sec=10) as jail:
+            assert jail._io_dir is not None
+            assert jail._io_dir.exists()
+
+    def test_context_manager_cleans_up(self):
+        with JailContext(timeout_sec=10) as jail:
+            io_dir = jail._io_dir
+        assert not io_dir.exists()
+
+    def test_call_delegates_to_jail_call(self):
+        with patch("nsjail.call.jail_call", return_value=42) as mock:
+            with JailContext(timeout_sec=10, memory_mb=256) as jail:
+                result = jail.call(lambda x: x, 21)
+
+        assert result == 42
+        mock.assert_called_once()
+        call_kwargs = mock.call_args.kwargs
+        assert call_kwargs["timeout_sec"] == 10
+        assert call_kwargs["memory_mb"] == 256
+        assert call_kwargs["_io_dir"] is not None
+
+    def test_multiple_calls_share_io_dir(self):
+        with patch("nsjail.call.jail_call", return_value=0) as mock:
+            with JailContext(timeout_sec=10) as jail:
+                jail.call(lambda: 1)
+                jail.call(lambda: 2)
+
+        calls = mock.call_args_list
+        assert calls[0].kwargs["_io_dir"] == calls[1].kwargs["_io_dir"]

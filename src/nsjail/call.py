@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import shutil
 import sys
 import tempfile
@@ -162,3 +163,38 @@ def jail_call(
     finally:
         if own_io_dir:
             shutil.rmtree(io_dir, ignore_errors=True)
+
+
+def jailed(**jail_kwargs: Any) -> Callable:
+    """Decorator that runs the function inside an nsjail sandbox on each call."""
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            return jail_call(func, args, kwargs, **jail_kwargs)
+        return wrapper
+    return decorator
+
+
+class JailContext:
+    """Context manager for multiple sandboxed function calls."""
+
+    def __init__(self, **jail_kwargs: Any) -> None:
+        self._jail_kwargs = jail_kwargs
+        self._io_dir: Path | None = None
+
+    def __enter__(self) -> JailContext:
+        self._io_dir = Path(tempfile.mkdtemp(prefix="nsjail_ctx_"))
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        if self._io_dir:
+            shutil.rmtree(self._io_dir, ignore_errors=True)
+            self._io_dir = None
+
+    def call(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
+        """Call a function inside the sandbox."""
+        return jail_call(
+            func, args=args, kwargs=kwargs,
+            _io_dir=self._io_dir,
+            **self._jail_kwargs,
+        )
