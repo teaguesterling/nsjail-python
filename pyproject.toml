@@ -35,6 +35,7 @@ proto = ["protobuf>=4.0"]
 binary = ["nsjail-bin"]
 build = ["nsjail-bin-build"]
 system = []
+call = ["cloudpickle"]
 dev = [
     "grpcio-tools",
     "pytest",

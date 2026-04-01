@@ -96,6 +96,16 @@ Mount Helpers
 
 .. autofunction:: nsjail.tmpfs_mount
 
+Jailed Execution
+----------------
+
+.. autofunction:: nsjail.jail_call
+
+.. autodecorator:: nsjail.jailed
+
+.. autoclass:: nsjail.JailContext
+   :members:
+
 Exceptions
 ----------
 

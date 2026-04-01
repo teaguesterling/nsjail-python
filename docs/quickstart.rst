@@ -204,3 +204,49 @@ Capture resource usage during sandbox execution:
        print(f"Peak memory: {result.cgroup_stats.memory_peak_bytes}")
        print(f"CPU time: {result.cgroup_stats.cpu_usage_ns}ns")
        print(f"Processes: {result.cgroup_stats.pids_current}")
+
+Jailed Execution
+----------------
+
+Call Python functions inside nsjail sandboxes:
+
+**Explicit call:**
+
+.. code-block:: python
+
+   from nsjail import jail_call
+
+   result = jail_call(
+       my_function,
+       args=(data,),
+       memory_mb=512,
+       timeout_sec=30,
+   )
+
+**Decorator:**
+
+.. code-block:: python
+
+   from nsjail import jailed
+
+   @jailed(memory_mb=512, timeout_sec=30)
+   def untrusted_compute(data):
+       return expensive_transform(data)
+
+   result = untrusted_compute(my_data)  # Runs in nsjail
+
+**Context manager:**
+
+.. code-block:: python
+
+   from nsjail import JailContext
+
+   with JailContext(memory_mb=512, timeout_sec=30) as jail:
+       result1 = jail.call(function_a, data)
+       result2 = jail.call(function_b, result1)
+
+Install ``cloudpickle`` for lambda/closure support:
+
+.. code-block:: bash
+
+   pip install nsjail-python[call]

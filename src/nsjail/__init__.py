@@ -12,16 +12,22 @@ from nsjail.mounts import (
     proc_mount, tmpfs_mount,
 )
 from nsjail.seccomp import SeccompPolicy, MINIMAL, DEFAULT_LOG, READONLY
+from nsjail.call import jail_call, jailed, JailContext
+from nsjail.exceptions import JailedExecutionError
 
 __all__ = [
     "CgroupStats",
     "DEFAULT_LOG",
+    "JailContext",
+    "JailedExecutionError",
     "bind_tree",
     "bind_paths",
     "dev_minimal",
     "Exe",
     "IdMap",
     "Jail",
+    "jail_call",
+    "jailed",
     "LogLevel",
     "MINIMAL",
     "Mode",
