@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nsjail-python"
-version = "0.5.0"
+version = "0.5.1"
 description = "Python wrapper for Google's nsjail sandboxing tool"
 requires-python = ">=3.12"
 license = "MIT"
@@ -40,6 +40,7 @@ dev = [
     "grpcio-tools",
     "pytest",
     "protobuf>=4.0",
+    "cloudpickle",
     "sphinx",
     "furo",
 ]
