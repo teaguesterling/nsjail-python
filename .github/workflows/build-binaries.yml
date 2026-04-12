@@ -44,21 +44,35 @@ jobs:
             bash -c '
               set -ex
 
-              # Install build dependencies
+              # Install build dependencies (include static libs for portable binary)
               yum install -y \
-                protobuf-compiler protobuf-devel \
-                libnl3-devel libcap-devel \
+                protobuf-compiler protobuf-devel protobuf-static \
+                libnl3-devel libnl3-static \
+                libcap-devel libcap-static \
                 bison flex autoconf libtool git make gcc-c++ \
                 pkg-config
 
-              # Build nsjail
-              # Older glibc in AlmaLinux 8 lacks some newer kernel constants
+              # Build nsjail with static linking for protobuf, libnl3, libcap
+              # so the binary is portable across Linux distros (not tied to
+              # the specific .so versions in this build container)
               cd _vendor/nsjail
-              make -j$(nproc) USER_DEFINES="-DMS_NOSYMFOLLOW=256 -DF_SEAL_FUTURE_WRITE=16 -Wno-error=array-bounds"
+
+              # Find static protobuf archive path
+              PROTOBUF_STATIC=$(pkg-config --variable=libdir protobuf)/libprotobuf.a
+
+              # Override PROTOBUF_LIBS to use static archive (+ zlib dep).
+              # The Makefile handles libnl3/libcap via pkg-config normally —
+              # those are stable enough across glibc-based distros. Protobuf
+              # is the one that breaks (so.15 vs so.32 across distro versions).
+              make -j$(nproc) \
+                USER_DEFINES="-DMS_NOSYMFOLLOW=256 -DF_SEAL_FUTURE_WRITE=16 -Wno-error=array-bounds" \
+                PROTOBUF_LIBS="$PROTOBUF_STATIC -lz"
+
               strip nsjail
 
-              # Verify binary
+              # Verify binary is not dynamically linked to protobuf
               file nsjail
+              ! ldd nsjail | grep libprotobuf && echo "OK: no dynamic libprotobuf dependency"
 
               # Copy into package
               cp nsjail /work/packages/nsjail-bin/src/nsjail_bin/_bin/nsjail

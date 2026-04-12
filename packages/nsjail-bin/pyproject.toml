@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nsjail-bin"
-version = "0.2.0"
+version = "0.2.1"
 description = "Pre-built nsjail binary for nsjail-python"
 requires-python = ">=3.12"
 license = "MIT"
