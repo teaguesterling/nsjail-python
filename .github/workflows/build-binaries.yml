@@ -44,29 +44,21 @@ jobs:
             bash -c '
               set -ex
 
-              # Install build dependencies (include static libs for portable binary)
+              # Install build dependencies
               yum install -y \
-                protobuf-compiler protobuf-devel protobuf-static \
-                libnl3-devel libnl3-static \
-                libcap-devel libcap-static \
+                protobuf-compiler protobuf-devel \
+                libnl3-devel libcap-devel \
                 bison flex autoconf libtool git make gcc-c++ \
                 pkg-config
 
-              # Build nsjail with static linking for protobuf, libnl3, libcap
-              # so the binary is portable across Linux distros (not tied to
-              # the specific .so versions in this build container)
+              # Build nsjail with protobuf statically linked so the binary
+              # is portable across distros (AlmaLinux 8 ships .so.15, modern
+              # distros ship .so.32+). Use -Bstatic/-Bdynamic linker flags
+              # to selectively static-link just protobuf.
               cd _vendor/nsjail
-
-              # Find static protobuf archive path
-              PROTOBUF_STATIC=$(pkg-config --variable=libdir protobuf)/libprotobuf.a
-
-              # Override PROTOBUF_LIBS to use static archive (+ zlib dep).
-              # The Makefile handles libnl3/libcap via pkg-config normally —
-              # those are stable enough across glibc-based distros. Protobuf
-              # is the one that breaks (so.15 vs so.32 across distro versions).
               make -j$(nproc) \
                 USER_DEFINES="-DMS_NOSYMFOLLOW=256 -DF_SEAL_FUTURE_WRITE=16 -Wno-error=array-bounds" \
-                PROTOBUF_LIBS="$PROTOBUF_STATIC -lz"
+                PROTOBUF_LIBS="-Wl,-Bstatic -lprotobuf -Wl,-Bdynamic -lz -lpthread"
 
               strip nsjail
 
