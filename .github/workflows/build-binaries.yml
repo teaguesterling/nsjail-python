@@ -49,16 +49,25 @@ jobs:
                 protobuf-compiler protobuf-devel \
                 libnl3-devel libcap-devel \
                 bison flex autoconf libtool git make gcc-c++ \
-                pkg-config
+                pkg-config curl
 
-              # Build nsjail with protobuf statically linked so the binary
-              # is portable across distros (AlmaLinux 8 ships .so.15, modern
-              # distros ship .so.32+). Use -Bstatic/-Bdynamic linker flags
-              # to selectively static-link just protobuf.
-              cd _vendor/nsjail
+              # Build a static libprotobuf so the nsjail binary is portable
+              # across distros (AlmaLinux 8 ships .so.15, modern distros
+              # ship .so.32+). The -devel RPM only includes .so, not .a.
+              PROTOBUF_VER=$(pkg-config --modversion protobuf)
+              curl -fsSL "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOBUF_VER}/protobuf-cpp-${PROTOBUF_VER}.tar.gz" -o /tmp/pb.tar.gz
+              tar xzf /tmp/pb.tar.gz -C /tmp
+              cd /tmp/protobuf-${PROTOBUF_VER}
+              ./configure --disable-shared --enable-static --with-pic CXXFLAGS="-fPIE -O2"
+              make -j$(nproc)
+              make install
+
+              # Build nsjail, linking the static protobuf
+              cd /work/_vendor/nsjail
               make -j$(nproc) \
                 USER_DEFINES="-DMS_NOSYMFOLLOW=256 -DF_SEAL_FUTURE_WRITE=16 -Wno-error=array-bounds" \
-                PROTOBUF_LIBS="-Wl,-Bstatic -lprotobuf -Wl,-Bdynamic -lz -lpthread"
+                PROTOBUF_CFLAGS="-I/usr/local/include" \
+                PROTOBUF_LIBS="/usr/local/lib/libprotobuf.a -lz -lpthread"
 
               strip nsjail
 
