@@ -1,5 +1,7 @@
 """Tests for jail_call execution engine."""
 
+import json
+
 import pytest
 from pathlib import Path
 from unittest.mock import patch
@@ -43,28 +45,41 @@ class TestSerializeInput:
 
 class TestDeserializeOutput:
     def test_success_result(self, tmp_path):
+        # Default (safe) transport is JSON.
+        output_path = tmp_path / "output.json"
+        output_path.write_text(json.dumps({"ok": True, "value": 42}))
+
+        result = _deserialize_output(output_path)
+        assert result == 42
+
+    def test_error_result_raises_jailed_error(self, tmp_path):
+        # The safe transport surfaces a jailed exception as a
+        # JailedExecutionError carrying the type/message (it does not
+        # reconstruct and re-raise the original exception object).
+        output_path = tmp_path / "output.json"
+        output_path.write_text(
+            json.dumps(
+                {"ok": False, "error": {"type": "ValueError", "message": "bad"}}
+            )
+        )
+
+        with pytest.raises(JailedExecutionError, match="ValueError.*bad"):
+            _deserialize_output(output_path)
+
+    def test_missing_output_raises(self, tmp_path):
+        output_path = tmp_path / "output.json"
+
+        with pytest.raises(JailedExecutionError, match="output"):
+            _deserialize_output(output_path)
+
+    def test_unsafe_pickle_roundtrips(self, tmp_path):
+        # Opt-in legacy transport still works for fully-trusted jailed code.
         pkl = _get_serializer()
         output_path = tmp_path / "output.pkl"
         with open(output_path, "wb") as f:
             pkl.dump((False, 42), f)
 
-        result = _deserialize_output(output_path)
-        assert result == 42
-
-    def test_error_result_reraises(self, tmp_path):
-        pkl = _get_serializer()
-        output_path = tmp_path / "output.pkl"
-        with open(output_path, "wb") as f:
-            pkl.dump((True, ValueError("bad")), f)
-
-        with pytest.raises(ValueError, match="bad"):
-            _deserialize_output(output_path)
-
-    def test_missing_output_raises(self, tmp_path):
-        output_path = tmp_path / "output.pkl"
-
-        with pytest.raises(JailedExecutionError, match="output"):
-            _deserialize_output(output_path)
+        assert _deserialize_output(output_path, unsafe_pickle=True) == 42
 
 
 class TestBuildJailConfig:
