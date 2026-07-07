@@ -1,107 +1,108 @@
 """Tests for the jailed worker module.
 
-Security note: Uses pickle for serialization between parent and child
-processes within the same trust domain (like multiprocessing).
+The worker reads its input via pickle (parent -> jail, trusted) and writes its
+result via a safe, non-executing JSON transport by default (jail -> parent,
+untrusted). An opt-in "pickle" output mode exists for fully-trusted code.
 """
 
-from pathlib import Path
+import json
 
 from nsjail._worker import run_worker, _get_serializer
 
 
+def _write_input(tmp_path, func, args, kwargs):
+    with open(tmp_path / "input.pkl", "wb") as f:
+        _get_serializer().dump((func, args, kwargs), f)
+
+
+def _read_json_output(tmp_path):
+    with open(tmp_path / "output.json") as f:
+        return json.load(f)
+
+
 class TestWorkerSuccess:
     def test_simple_function(self, tmp_path):
-        input_path = tmp_path / "input.pkl"
-        output_path = tmp_path / "output.pkl"
-
         def add(a, b):
             return a + b
 
-        with open(input_path, "wb") as f:
-            _get_serializer().dump((add, (1, 2), {}), f)
-
+        _write_input(tmp_path, add, (1, 2), {})
         run_worker(tmp_path)
 
-        with open(output_path, "rb") as f:
-            is_error, result = _get_serializer().load(f)
-
-        assert is_error is False
-        assert result == 3
+        doc = _read_json_output(tmp_path)
+        assert doc == {"ok": True, "value": 3}
 
     def test_function_with_kwargs(self, tmp_path):
-        input_path = tmp_path / "input.pkl"
-        output_path = tmp_path / "output.pkl"
-
         def greet(name, greeting="hello"):
             return f"{greeting} {name}"
 
-        with open(input_path, "wb") as f:
-            _get_serializer().dump((greet, ("world",), {"greeting": "hi"}), f)
-
+        _write_input(tmp_path, greet, ("world",), {"greeting": "hi"})
         run_worker(tmp_path)
 
-        with open(output_path, "rb") as f:
-            is_error, result = _get_serializer().load(f)
-
-        assert is_error is False
-        assert result == "hi world"
+        doc = _read_json_output(tmp_path)
+        assert doc == {"ok": True, "value": "hi world"}
 
     def test_function_returning_none(self, tmp_path):
-        input_path = tmp_path / "input.pkl"
-        output_path = tmp_path / "output.pkl"
-
         def noop():
             pass
 
-        with open(input_path, "wb") as f:
-            _get_serializer().dump((noop, (), {}), f)
-
+        _write_input(tmp_path, noop, (), {})
         run_worker(tmp_path)
 
-        with open(output_path, "rb") as f:
-            is_error, result = _get_serializer().load(f)
+        doc = _read_json_output(tmp_path)
+        assert doc == {"ok": True, "value": None}
 
-        assert is_error is False
-        assert result is None
+    def test_unserializable_result_reported_not_crashed(self, tmp_path):
+        def make_obj():
+            return object()  # not JSON-serializable
+
+        _write_input(tmp_path, make_obj, (), {})
+        run_worker(tmp_path)
+
+        doc = _read_json_output(tmp_path)
+        assert doc["ok"] is False
+        assert doc["error"]["type"] == "UnserializableResult"
+        assert "unsafe_pickle_output" in doc["error"]["message"]
 
 
 class TestWorkerErrors:
     def test_function_raises(self, tmp_path):
-        input_path = tmp_path / "input.pkl"
-        output_path = tmp_path / "output.pkl"
-
         def failing():
             raise ValueError("bad input")
 
-        with open(input_path, "wb") as f:
-            _get_serializer().dump((failing, (), {}), f)
-
+        _write_input(tmp_path, failing, (), {})
         run_worker(tmp_path)
 
-        with open(output_path, "rb") as f:
-            is_error, result = _get_serializer().load(f)
-
-        assert is_error is True
-        assert isinstance(result, ValueError)
-        assert "bad input" in str(result)
+        doc = _read_json_output(tmp_path)
+        assert doc["ok"] is False
+        assert doc["error"]["type"] == "ValueError"
+        assert "bad input" in doc["error"]["message"]
 
     def test_function_raises_custom_exception(self, tmp_path):
-        input_path = tmp_path / "input.pkl"
-        output_path = tmp_path / "output.pkl"
-
         class CustomError(Exception):
             pass
 
         def failing():
             raise CustomError("custom")
 
-        with open(input_path, "wb") as f:
-            _get_serializer().dump((failing, (), {}), f)
-
+        _write_input(tmp_path, failing, (), {})
         run_worker(tmp_path)
 
-        with open(output_path, "rb") as f:
+        doc = _read_json_output(tmp_path)
+        assert doc["ok"] is False
+        assert doc["error"]["type"] == "CustomError"
+        assert "custom" in doc["error"]["message"]
+
+
+class TestWorkerUnsafePickleMode:
+    def test_pickle_output_roundtrips(self, tmp_path):
+        def add(a, b):
+            return a + b
+
+        _write_input(tmp_path, add, (2, 3), {})
+        run_worker(tmp_path, output_format="pickle")
+
+        with open(tmp_path / "output.pkl", "rb") as f:
             is_error, result = _get_serializer().load(f)
 
-        assert is_error is True
-        assert isinstance(result, CustomError)
+        assert is_error is False
+        assert result == 5

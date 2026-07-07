@@ -13,8 +13,22 @@ from typing import Any
 
 from nsjail.cgroup import CgroupMonitor, CgroupStats
 from nsjail.config import NsJailConfig
-from nsjail.exceptions import NsjailNotFound
+from nsjail.exceptions import NsjailNotFound, UnsupportedCLIField
 from nsjail.serializers import to_file
+
+# Security-critical isolation that the nsjail CLI renderer cannot express.
+# Silently dropping any of these when render_mode="cli" would produce a jail
+# weaker than the config requested (e.g. losing a read-only-root remount), so
+# the runner refuses instead.
+_CLI_UNRENDERABLE_SECURITY_FIELDS = ("mount", "user_net")
+
+
+def _reject_undroppable_cli_fields(cfg: NsJailConfig) -> None:
+    """Raise if a CLI-mode render would silently drop security-critical config."""
+    for name in _CLI_UNRENDERABLE_SECURITY_FIELDS:
+        value = getattr(cfg, name, None)
+        if value:  # non-empty list / non-None message
+            raise UnsupportedCLIField(name)
 
 
 def _try_companion_binary() -> Path | None:
@@ -155,6 +169,13 @@ class Runner:
             nsjail_args = [str(nsjail_bin), "--config", str(config_path)]
         else:
             from nsjail.serializers.cli import to_cli_args
+
+            # Refuse to render a config whose security-critical isolation the
+            # CLI cannot express, rather than silently dropping it. This keeps
+            # the CLI and textproto (library) entry points from diverging on
+            # the effective sandbox.
+            _reject_undroppable_cli_fields(cfg)
+
             cli_args = to_cli_args(cfg, on_unsupported="skip")
             nsjail_args = [str(nsjail_bin)] + cli_args
 
